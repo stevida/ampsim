@@ -12,10 +12,20 @@
 
 //need to extract parameters from the audio processor value tree state
 // implementing a struct
+
+enum Slope
+{
+    Slope_12,
+    Slope_24,
+    Slope_36,
+    Slope_48
+};
+
 struct ChainSettings{
     float peakFreq{0}, peakGainInDecibels{0} , peakQuality{1.f};
     float lowCutFreq{0}, highCutFreq{0};
-    int lowCutSlope{0}, highCutSlope{0};
+    
+    int lowCutSlope{Slope::Slope_12}, highCutSlope{Slope::Slope_12};
 };
 
 
@@ -66,22 +76,18 @@ public:
     void setStateInformation (const void* data, int sizeInBytes) override;
     
     
-    //need to create createParameter Layout bc the APVT requires a list of the parametets for when you call it
+    //need to create createParameter Layout bc the APVT requires a list of the parameters for when you call it
     
-    using APVT =juce::AudioProcessorValueTreeState::ParameterLayout;
+    using APVT = juce::AudioProcessorValueTreeState::ParameterLayout;
     static APVT createParameterLayout();
     juce::AudioProcessorValueTreeState apvts {*this, nullptr,"Parameters",createParameterLayout()};
 
     //set up to processs mono audio, needs to process stereo so change,
     
     using Filter = juce::dsp::IIR::Filter<float>;
-    using CutFilter = juce::dsp::ProcessorChain<Filter,Filter,Filter,Filter>;
     
-    /**
-                    mono chain: lowcut -> parametric -> highcut
-     
-     
-     */
+    using CutFilter = juce::dsp::ProcessorChain<Filter,Filter,Filter,Filter>;
+    /** mono chain: lowcut -> parametric -> highcut*/
     using MonoChain = juce::dsp::ProcessorChain<CutFilter, Filter, CutFilter>;
     
     MonoChain leftChain,rightChain;
