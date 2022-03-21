@@ -105,7 +105,18 @@ void AmpsimAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock
     leftChain.prepare(spec);
     rightChain.prepare(spec);
     
+    auto chainSettings = getChainSettings(apvts);
+    auto peakCoefficients = juce::dsp::IIR::Coefficients<float>::makePeakFilter(sampleRate,
+                                                                                chainSettings.peakFreq,
+                                                                                chainSettings.peakQuality,
+                                                                                juce::Decibels::decibelsToGain(chainSettings.peakGainInDecibels));//needs to be in gain units, not decibels
+    *leftChain.get<ChainPosititions::Peak>().coefficients = *peakCoefficients;
+    *rightChain.get<ChainPosititions::Peak>().coefficients = *peakCoefficients;
     
+    
+    
+    //NEEDS AN INDEX, CREATE AN ENUMRATOR TO KNOW WHAT EACH ELEMENT IN THE ARRAY IS
+    //define an enumerator to define each links position in the chain, or each element in the array
     
     // Use this method as the place to do any pre-playback
     // initialisation that you need..
@@ -159,6 +170,16 @@ void AmpsimAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
+    
+    //taken from the prepareToPlay function
+    auto chainSettings = getChainSettings(apvts);
+    auto peakCoefficients = juce::dsp::IIR::Coefficients<float>::makePeakFilter(getSampleRate(),
+                                                                                chainSettings.peakFreq,
+                                                                                chainSettings.peakQuality,
+                                                                                juce::Decibels::decibelsToGain(chainSettings.peakGainInDecibels));//needs to be in gain units, not decibels
+    *leftChain.get<ChainPosititions::Peak>().coefficients = *peakCoefficients;
+    *rightChain.get<ChainPosititions::Peak>().coefficients = *peakCoefficients;
+    
     //need to extract the left and right channels from the block that contains the buffer
     juce::dsp::AudioBlock<float> block(buffer);
 
@@ -202,12 +223,32 @@ void AmpsimAudioProcessor::setStateInformation (const void* data, int sizeInByte
     // You should use this method to restore your parameters from this memory block,
     // whose contents will have been created by the getStateInformation() call.
 }
+
+//helper function to get the parameters of the audiotreevaluestate
+ChainSettings getChainSettings(juce::AudioProcessorValueTreeState& apvts){
+    ChainSettings settings;
+    
+    /**
+            taking the values from the audiotreevaluestate and putting them into the settings struct
+     */
+    settings.lowCutFreq = apvts.getRawParameterValue("LowCut Freq")->load(); //doesn't return a     normalized value
+    settings.highCutFreq= apvts.getRawParameterValue("HighCut Freq")->load();
+    settings.peakFreq = apvts.getRawParameterValue("Peak Freq")->load();
+    settings.peakGainInDecibels = apvts.getRawParameterValue("Peak Gain")->load();
+    settings.peakQuality = apvts.getRawParameterValue("Peak Quality")->load();
+    settings.lowCutSlope =apvts.getRawParameterValue("LowCut Slope")->load();
+    settings.highCutSlope =apvts.getRawParameterValue("HighCut Slope")->load();
+    
+    return settings;
+    
+    
+}
 juce::AudioProcessorValueTreeState::ParameterLayout AmpsimAudioProcessor::createParameterLayout()
 {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
     layout.add(std::make_unique<juce::AudioParameterFloat>("LowCut Freq",
                                                             "LowCut Freq",
-                                                            juce::NormalisableRange<float>(20.f,20000.f, 1.f,1.f),
+                                                            juce::NormalisableRange<float>(20.f,20000.f, 1.f,0.5f),
                                                             20.f));
     
     
@@ -224,12 +265,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout AmpsimAudioProcessor::create
                **/
        layout.add(std::make_unique<juce::AudioParameterFloat>("HighCut Freq",
                                                               "HighCut Freq",
-                                                              juce::NormalisableRange<float>(20.f,20000.f, 1.f,1.f),
+                                                              juce::NormalisableRange<float>(20.f,20000.f, 1.f,0.5f),
                                                               20000.f));
        
        layout.add(std::make_unique<juce::AudioParameterFloat>("Peak Freq",
                                                               "Peak Freq",
-                                                              juce::NormalisableRange<float>(20.f,20000.f, 1.f,1.f),
+                                                              juce::NormalisableRange<float>(20.f,20000.f, 1.f,0.5f),
                                                               750.f));
       //*  peak gain will be expressed in decibels, using values from -24 to 24, w/ stepsize of 0.5, starting at 0 so there is not gain added at the beginning
        layout.add(std::make_unique<juce::AudioParameterFloat>("Peak Gain",
