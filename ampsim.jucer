@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <JUCERPROJECT id="GbUCkj" name="ampsim" projectType="audioplug" useAppConfig="0"
-              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1">
+              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" pluginManufacturer="vidal">
   <MAINGROUP id="WLiLU9" name="ampsim">
     <GROUP id="{724D140B-87DA-BA5C-2EF0-420ACD6D7FF9}" name="Source">
       <FILE id="irE5l5" name="PluginProcessor.cpp" compile="1" resource="0"

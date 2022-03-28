@@ -106,23 +106,24 @@ void AmpsimAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock
     rightChain.prepare(spec);
     
     auto chainSettings = getChainSettings(apvts);
-    auto peakCoefficients = juce::dsp::IIR::Coefficients<float>::makePeakFilter(sampleRate,
-                                                                                chainSettings.peakFreq,
-                                                                                chainSettings.peakQuality,
-                                                                                juce::Decibels::decibelsToGain(chainSettings.peakGainInDecibels));//needs to be in gain units, not decibels
-    *leftChain.get<ChainPosititions::Peak>().coefficients = *peakCoefficients;
-    *rightChain.get<ChainPosititions::Peak>().coefficients = *peakCoefficients;
     
+    updatePeakFilter(chainSettings); /** CODE THAT WAS HERE PREVIOUSLY WAS UPDATED*/
 
     auto cutCoefficients = juce::dsp::FilterDesign<float>::designIIRHighpassHighOrderButterworthMethod(chainSettings.lowCutFreq,
                                                                                                        sampleRate,
                                                                                                        2* (chainSettings.lowCutSlope + 1));
     
-    auto& leftLowCut = leftChain.get<ChainPosititions::lowCut>();
+    auto& leftLowCut = leftChain.get<ChainPosititions::lowCut>(); // this is our enum
+    
+    /** bypassing all of the links in the chain*/
     leftLowCut.setBypassed<0>(true);
     leftLowCut.setBypassed<1>(true);
     leftLowCut.setBypassed<2>(true);
     leftLowCut.setBypassed<3>(true);
+    
+    /**
+            if the order is 2 (Slope_12) helper function will return an array with 1 coefficient object only
+     */
     
     switch (chainSettings.lowCutSlope) {
         case Slope_12:
@@ -250,13 +251,20 @@ void AmpsimAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     
     //taken from the prepareToPlay function
     auto chainSettings = getChainSettings(apvts);
-    auto peakCoefficients = juce::dsp::IIR::Coefficients<float>::makePeakFilter(getSampleRate(),
-                                                                                chainSettings.peakFreq,
-                                                                                chainSettings.peakQuality,
-                                                                                juce::Decibels::decibelsToGain(chainSettings.peakGainInDecibels));//needs to be in gain units, not decibels
-    *leftChain.get<ChainPosititions::Peak>().coefficients = *peakCoefficients;
-    *rightChain.get<ChainPosititions::Peak>().coefficients = *peakCoefficients;
-    
+  
+    updatePeakFilter(chainSettings);
+    /*
+     all this code underneath was moved to updatePealFilter
+     
+     */
+//    auto peakCoefficients = juce::dsp::IIR::Coefficients<float>::makePeakFilter(getSampleRate(),
+//                                                                                chainSettings.peakFreq,
+//                                                                                chainSettings.peakQuality,
+//                                                                                juce::Decibels::decibelsToGain(chainSettings.peakGainInDecibels));//needs to be in gain units, not decibels
+//    *leftChain.get<ChainPosititions::Peak>().coefficients = *peakCoefficients;
+//    *rightChain.get<ChainPosititions::Peak>().coefficients = *peakCoefficients;
+//
+//
     
     //cutfilter block
     auto cutCoefficients = juce::dsp::FilterDesign<float>::designIIRHighpassHighOrderButterworthMethod(chainSettings.lowCutFreq,
@@ -385,7 +393,6 @@ void AmpsimAudioProcessor::setStateInformation (const void* data, int sizeInByte
 //helper function to get the parameters of the audiotreevaluestate
 ChainSettings getChainSettings(juce::AudioProcessorValueTreeState& apvts){
     ChainSettings settings;
-    
     /**
             taking the values from the audiotreevaluestate and putting them into the settings struct
      */
@@ -399,9 +406,26 @@ ChainSettings getChainSettings(juce::AudioProcessorValueTreeState& apvts){
     settings.highCutSlope = static_cast<Slope>(apvts.getRawParameterValue("HighCut Slope")->load());
     
     return settings;
-    
+}
+
+
+
+void AmpsimAudioProcessor::updatePeakFilter (const ChainSettings& chainSettings){
+    auto peakCoefficients = juce::dsp::IIR::Coefficients<float>::makePeakFilter(getSampleRate(),
+                                                                                chainSettings.peakFreq,
+                                                                                chainSettings.peakQuality,
+                                                                                juce::Decibels::decibelsToGain(chainSettings.peakGainInDecibels));//needs to be in gain units, not decibels
+
+    /**this function replaces these two lines*/
+    updateCoefficients(leftChain.get<ChainPosititions::Peak>().coefficients, peakCoefficients);
+    updateCoefficients(rightChain.get<ChainPosititions::Peak>().coefficients, peakCoefficients);
     
 }
+
+ void AmpsimAudioProcessor::updateCoefficients(Coefficients& old, const Coefficients& replacements){
+    *old = *replacements;
+}
+
 juce::AudioProcessorValueTreeState::ParameterLayout AmpsimAudioProcessor::createParameterLayout()
 {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
@@ -415,7 +439,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout AmpsimAudioProcessor::create
                 order of add variables
                 layout.add(<#std::unique_ptr<Items> items...#>)
                 layout.add(std::make_unique<juce::AudioParameterFloat(<#const String &parameterID#>, <#const String &parameterName#>, juce::NormalisableRange<float>, <#float defaultValue#>)> )
-       
+    
                 NormalisableRange (ValueType rangeStart,
                                    ValueType rangeEnd,
                                    ValueType intervalValue,
@@ -457,12 +481,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout AmpsimAudioProcessor::create
         layout.add(std::make_unique<juce::AudioParameterChoice>("LowCut Slope","LowCut Slope",stringArray,0));
         layout.add(std::make_unique<juce::AudioParameterChoice>("HighCut Slope","HighCut Slope",stringArray,0));
                    
-        
-        
         return layout;
         
-    
-    
 }
 
 

@@ -25,7 +25,7 @@ struct ChainSettings{
     float peakFreq{0}, peakGainInDecibels{0} , peakQuality{1.f};
     float lowCutFreq{0}, highCutFreq{0};
     
-    int lowCutSlope{Slope::Slope_12}, highCutSlope{Slope::Slope_12};
+    Slope lowCutSlope{Slope::Slope_12}, highCutSlope{Slope::Slope_12};
 };
 
 
@@ -100,8 +100,11 @@ public:
         highCut,
     };
     
+    void updatePeakFilter (const ChainSettings& chainSettings);
     
-
+    /** alias used for the coefficient functions used*/
+    using Coefficients = Filter::CoefficientsPtr;
+    static void updateCoefficients(Coefficients& old, const Coefficients& replacements);
 
 private:
     //==============================================================================
