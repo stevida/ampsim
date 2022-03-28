@@ -106,23 +106,11 @@ void AmpsimAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock
     rightChain.prepare(spec);
     
     auto chainSettings = getChainSettings(apvts);
-    updatePeakFilter(chainSettings); /** CODE THAT WAS HERE PREVIOUSLY WAS UPDATED*/
+    /** CODE THAT WAS HERE PREVIOUSLY WAS UPDATED*/
 
     
-    auto cutCoefficients = juce::dsp::FilterDesign<float>::designIIRHighpassHighOrderButterworthMethod(chainSettings.lowCutFreq,
-                                                                                                       sampleRate,
-                                                                                                       2* (chainSettings.lowCutSlope + 1));
     
-    auto& leftLowCut = leftChain.get<ChainPosititions::lowCut>(); // this is our enum
-    updateCutFilter(leftLowCut,cutCoefficients, chainSettings.lowCutSlope);
-
-    /**
-        look at the code for the updateCutFilter
-     */
-    
-    auto& rightLowCut = rightChain.get<ChainPosititions::lowCut>();
-    updateCutFilter(rightLowCut, cutCoefficients,chainSettings.lowCutSlope);
-    
+    updateFilters();
     
     // Use this method as the place to do any pre-playback
     // initialisation that you need..
@@ -180,33 +168,7 @@ void AmpsimAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     //taken from the prepareToPlay function
     auto chainSettings = getChainSettings(apvts);
   
-    updatePeakFilter(chainSettings);
-    
-    
-    /*
-     all this code underneath was moved to updatePealFilter
-     
-     */
-//    auto peakCoefficients = juce::dsp::IIR::Coefficients<float>::makePeakFilter(getSampleRate(),
-//                                                                                chainSettings.peakFreq,
-//                                                                                chainSettings.peakQuality,
-//                                                                                juce::Decibels::decibelsToGain(chainSettings.peakGainInDecibels));//needs to be in gain units, not decibels
-//    *leftChain.get<ChainPosititions::Peak>().coefficients = *peakCoefficients;
-//    *rightChain.get<ChainPosititions::Peak>().coefficients = *peakCoefficients;
-//
-//
-    
-    
-    //cutfilter block
-    auto cutCoefficients = juce::dsp::FilterDesign<float>::designIIRHighpassHighOrderButterworthMethod(chainSettings.lowCutFreq,
-                                                                                                       getSampleRate(),
-                                                                                                       2* (chainSettings.lowCutSlope + 1));
-    auto& leftLowCut = leftChain.get<ChainPosititions::lowCut>();
-    updateCutFilter(leftLowCut, cutCoefficients, chainSettings.lowCutSlope);
-    
-    
-    auto& rightLowCut = rightChain.get<ChainPosititions::lowCut>();
-    updateCutFilter(rightLowCut, cutCoefficients, chainSettings.lowCutSlope);
+    updateFilters();
     
     
     //need to extract the left and right channels from the block that contains the buffer
@@ -273,16 +235,7 @@ ChainSettings getChainSettings(juce::AudioProcessorValueTreeState& apvts){
 
 
 
-void AmpsimAudioProcessor::updatePeakFilter (const ChainSettings& chainSettings){
-    auto peakCoefficients = juce::dsp::IIR::Coefficients<float>::makePeakFilter(getSampleRate(),
-                                                                                chainSettings.peakFreq,
-                                                                                chainSettings.peakQuality,
-                                                                                juce::Decibels::decibelsToGain(chainSettings.peakGainInDecibels));//needs to be in gain units, not decibels
 
-    /**this function replaces these two lines*/
-    updateCoefficients(leftChain.get<ChainPosititions::Peak>().coefficients, peakCoefficients);
-    updateCoefficients(rightChain.get<ChainPosititions::Peak>().coefficients, peakCoefficients);
-}
 
 
  void AmpsimAudioProcessor::updateCoefficients(Coefficients& old, const Coefficients& replacements){
@@ -311,7 +264,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout AmpsimAudioProcessor::create
                **/
        layout.add(std::make_unique<juce::AudioParameterFloat>("HighCut Freq",
                                                               "HighCut Freq",
-                                                              juce::NormalisableRange<float>(20.f,20000.f, 1.f,0.5f),
+                                                              juce::NormalisableRange<float>(20.f,20000.f, 1.f,0.75f),
                                                               20000.f));
        
        layout.add(std::make_unique<juce::AudioParameterFloat>("Peak Freq",
@@ -348,6 +301,52 @@ juce::AudioProcessorValueTreeState::ParameterLayout AmpsimAudioProcessor::create
         
 }
 
+
+
+void AmpsimAudioProcessor::updateLowCutFilters(const ChainSettings &chainSettings){
+    
+    auto cutCoefficients = juce::dsp::FilterDesign<float>::designIIRHighpassHighOrderButterworthMethod(chainSettings.lowCutFreq,
+                                                                                                       getSampleRate(),
+                                                                                                       2* (chainSettings.lowCutSlope + 1));
+    auto& leftLowCut = leftChain.get<ChainPosititions::lowCut>();
+    auto& rightLowCut = rightChain.get<ChainPosititions::lowCut>();
+    
+    updateCutFilter(leftLowCut, cutCoefficients, chainSettings.lowCutSlope);
+    updateCutFilter(rightLowCut, cutCoefficients, chainSettings.lowCutSlope);
+    
+}
+
+void AmpsimAudioProcessor::updatePeakFilter (const ChainSettings& chainSettings){
+    auto peakCoefficients = juce::dsp::IIR::Coefficients<float>::makePeakFilter(getSampleRate(),
+                                                                                chainSettings.peakFreq,
+                                                                                chainSettings.peakQuality,
+                                                                                juce::Decibels::decibelsToGain(chainSettings.peakGainInDecibels));//needs to be in gain units, not decibels
+
+    /**this function replaces these two lines*/
+    updateCoefficients(leftChain.get<ChainPosititions::Peak>().coefficients, peakCoefficients);
+    updateCoefficients(rightChain.get<ChainPosititions::Peak>().coefficients, peakCoefficients);
+}
+
+void AmpsimAudioProcessor::updateHighCutFilters(const ChainSettings &chainSettings){
+    
+    auto highCutCoeefficients = juce::dsp::FilterDesign<float>::designIIRLowpassHighOrderButterworthMethod(chainSettings.highCutFreq,
+                                                                                                           getSampleRate(),
+                                                                                                           2 * (chainSettings.highCutFreq + 1));
+    auto& leftHighCut = leftChain.get<ChainPosititions::highCut>();
+    auto& rightHighCut = rightChain.get<ChainPosititions::highCut>();
+    
+    updateCutFilter(leftHighCut,highCutCoeefficients,chainSettings.highCutSlope);
+    updateCutFilter(rightHighCut,highCutCoeefficients,chainSettings.highCutSlope);
+    
+    
+}
+void AmpsimAudioProcessor::updateFilters(){
+    auto chainSettings = getChainSettings(apvts);
+    updateLowCutFilters(chainSettings);
+    updatePeakFilter(chainSettings);
+    updateHighCutFilters(chainSettings);
+    
+}
 
 
 

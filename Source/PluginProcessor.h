@@ -100,7 +100,7 @@ public:
         highCut,
     };
     
-    void updatePeakFilter (const ChainSettings& chainSettings);
+    
     
     /** alias used for the coefficient functions used*/
     using Coefficients = Filter::CoefficientsPtr;
@@ -152,11 +152,14 @@ public:
                 update<0>(chain,coefficient);
             }
         }
-                
-                
     }
+    void updateLowCutFilters(const ChainSettings& chainsettings);
+    void updatePeakFilter (const ChainSettings& chainSettings);
+    void updateHighCutFilters(const ChainSettings& chainsettings);
+    void updateFilters();
+    
 
-                                                
+                                        
 private:
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AmpsimAudioProcessor)
