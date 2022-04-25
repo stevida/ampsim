@@ -8,6 +8,7 @@
 
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "my_convolution.h"
 
 //==============================================================================
 AmpsimAudioProcessor::AmpsimAudioProcessor()
@@ -23,6 +24,10 @@ AmpsimAudioProcessor::AmpsimAudioProcessor()
 #endif
 {
 }
+
+//initialize the object for the Convolution
+AudioEngine convolutionEngineLeft;
+AudioEngine convolutionEngineRight;
 
 AmpsimAudioProcessor::~AmpsimAudioProcessor()
 {
@@ -107,13 +112,19 @@ void AmpsimAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock
     
     auto chainSettings = getChainSettings(apvts);
     /** CODE THAT WAS HERE PREVIOUSLY WAS UPDATED*/
+    auto level = chainSettings.levelOutput;
 
+   
     
     
     updateFilters();
     
+    convolutionEngineLeft.prepare(spec);
+    convolutionEngineRight.prepare(spec);
+    
+    //updateLevelOutput(chainSettings,buffer);
     // Use this method as the place to do any pre-playback
-    // initialisation that you need..
+    // initialization that you need..
 }
 
 void AmpsimAudioProcessor::releaseResources()
@@ -150,7 +161,7 @@ bool AmpsimAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) c
 
 void AmpsimAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
-    juce::ScopedNoDenormals noDenormals;
+    juce::ScopedNoDenormals noDenormals; //prevent cpu load from spiking when its doing calculations on small values
     auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
 
@@ -167,24 +178,29 @@ void AmpsimAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     
     //taken from the prepareToPlay function
     auto chainSettings = getChainSettings(apvts);
-  
+    
+    
+    
     updateFilters();
-    
-    
+   
+
     //need to extract the left and right channels from the block that contains the buffer
     juce::dsp::AudioBlock<float> block(buffer);
 
     auto leftBlock = block.getSingleChannelBlock(0);
     auto rightBlock = block.getSingleChannelBlock(1);
     
-    
     juce::dsp::ProcessContextReplacing<float> leftContext(leftBlock);
     juce::dsp::ProcessContextReplacing<float> rightContext(rightBlock);
+    
     
     leftChain.process(leftContext);
     rightChain.process(rightContext);
     
-    
+    convolutionEngineLeft.process_convolution(leftContext);
+    convolutionEngineRight.process_convolution(rightContext);
+
+    //updateLevelOutput(chainSettings,buffer); // to update OUTPUT level
 }
 
 //==============================================================================
@@ -196,14 +212,19 @@ bool AmpsimAudioProcessor::hasEditor() const
 juce::AudioProcessorEditor* AmpsimAudioProcessor::createEditor()
 {
     
-    //return new AmpsimAudioProcessorEditor (*this); this returns the default hello world module, we can use the generic one
+    //return new AmpsimAudioProcessorEditor (*this);// this returns the default hello world module, we can use the generic one
     return new juce::GenericAudioProcessorEditor(*this);
-
+    
 }
 
 //==============================================================================
 void AmpsimAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
+    
+    // gives us the state of of our apvt
+    juce::MemoryOutputStream mos(destData,true);
+    apvts.state.writeToStream(mos);
+    
     // You should use this method to store your parameters in the memory block.
     // You could do that either as raw data, or use the XML or ValueTree classes
     // as intermediaries to make it easy to save and load complex data.
@@ -211,6 +232,13 @@ void AmpsimAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 
 void AmpsimAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
+    
+    // this is to save state information of our values
+    auto tree = juce::ValueTree::readFromData(data,sizeInBytes);
+    if(tree.isValid()){
+        apvts.replaceState(tree);
+        updateFilters();
+    }
     // You should use this method to restore your parameters from this memory block,
     // whose contents will have been created by the getStateInformation() call.
 }
@@ -227,13 +255,18 @@ ChainSettings getChainSettings(juce::AudioProcessorValueTreeState& apvts){
     settings.peakGainInDecibels = apvts.getRawParameterValue("Peak Gain")->load();
     settings.peakQuality = apvts.getRawParameterValue("Peak Quality")->load();
     
+    settings.levelOutput = apvts.getRawParameterValue("Level")->load();
+    
+                                                
+                                    
+    
     settings.lowCutSlope =static_cast<Slope>(apvts.getRawParameterValue("LowCut Slope")->load());
     settings.highCutSlope = static_cast<Slope>(apvts.getRawParameterValue("HighCut Slope")->load());
     
+
+    
     return settings;
 }
-
-
 
 
 
@@ -264,8 +297,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout AmpsimAudioProcessor::create
                **/
        layout.add(std::make_unique<juce::AudioParameterFloat>("HighCut Freq",
                                                               "HighCut Freq",
-                                                              juce::NormalisableRange<float>(20.f,20000.f, 1.f,0.75f),
-                                                              20000.f));
+                                                              juce::NormalisableRange<float>(20.f,17500.f, .5f,0.75f),
+                                                              15000.f));
        
        layout.add(std::make_unique<juce::AudioParameterFloat>("Peak Freq",
                                                               "Peak Freq",
@@ -283,6 +316,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout AmpsimAudioProcessor::create
                                                               juce::NormalisableRange<float>(0.1f,10.f, 0.05f,1.f),
                                                               1.f));
     
+    
+    /*** attempting to add a gain module*/
+
+    /** level knob decleration*/
+    layout.add(std::make_unique<juce::AudioParameterFloat>("Level","Level", juce::NormalisableRange<float>(0.f, 10.f,.5f,1.f),0));
+    
+
     
     //represents the cutoff slope of each  filter types, usually between 12 and 48 at increments of 12
     juce::StringArray stringArray;
@@ -313,7 +353,7 @@ void AmpsimAudioProcessor::updateLowCutFilters(const ChainSettings &chainSetting
     
     updateCutFilter(leftLowCut, cutCoefficients, chainSettings.lowCutSlope);
     updateCutFilter(rightLowCut, cutCoefficients, chainSettings.lowCutSlope);
-    
+
 }
 
 void AmpsimAudioProcessor::updatePeakFilter (const ChainSettings& chainSettings){
@@ -349,6 +389,31 @@ void AmpsimAudioProcessor::updateFilters(){
 }
 
 
+//helper function to change post volume
+void AmpsimAudioProcessor::updateLevelOutput(const ChainSettings& chainSettings,juce::AudioBuffer<float>& buffer){
+
+    //change output level?
+    auto currentLevel = chainSettings.levelOutput;
+    
+
+    for(auto channel = 0; channel < getTotalNumInputChannels();++channel){
+        auto* channelData = buffer.getWritePointer(channel);
+        for(auto sample = 0; sample<buffer.getNumSamples();++sample){
+            channelData[sample] *=  currentLevel * .15;
+        }
+    }
+
+}
+
+void AmpsimAudioProcessor::updateConvolution(){
+    
+    
+    
+}
+
+
+
+
 
 //==============================================================================
 // This creates new instances of the plugin..
@@ -358,3 +423,7 @@ juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
     return new AmpsimAudioProcessor();
 
 }
+
+
+
+

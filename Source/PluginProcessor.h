@@ -9,6 +9,8 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "my_convolution.h"
+
 
 //need to extract parameters from the audio processor value tree state
 // implementing a struct
@@ -24,6 +26,7 @@ enum Slope
 struct ChainSettings{
     float peakFreq{0}, peakGainInDecibels{0} , peakQuality{1.f};
     float lowCutFreq{0}, highCutFreq{0};
+    float levelOutput{0};
     
     Slope lowCutSlope{Slope::Slope_12}, highCutSlope{Slope::Slope_12};
 };
@@ -92,6 +95,9 @@ public:
     
     MonoChain leftChain,rightChain;
     
+    
+    
+    
     //to define the elements in the chain 
     enum ChainPosititions
     {
@@ -158,9 +164,21 @@ public:
     void updateHighCutFilters(const ChainSettings& chainsettings);
     void updateFilters();
     
+    //updates convolution & distortion
+    /*********************************************************************************************************************************************************************/
+    
+    void updateConvolution();
+    
+    
+    //function to update overall level of output
 
+    void updateLevelOutput(const ChainSettings& chainSettings,juce::AudioBuffer<float>& buffer);
+    
+    
                                         
 private:
+    
+    
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AmpsimAudioProcessor)
 };
